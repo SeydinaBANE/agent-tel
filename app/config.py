@@ -43,5 +43,11 @@ class Settings(BaseSettings):
     google_calendar_credentials: str = ""
     google_calendar_id: str = "primary"
 
+    # Monitoring (optionnel)
+    sentry_dsn: str = ""
+
+    # Rate limiting (requêtes/minute par IP sur POST /calls/outbound)
+    rate_limit_calls_per_minute: int = 10
+
 
 settings = Settings()  # type: ignore[call-arg]
