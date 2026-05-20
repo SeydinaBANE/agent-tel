@@ -7,7 +7,7 @@ import time
 from fastapi import WebSocket, WebSocketDisconnect
 
 from app.agents.team import create_team_agent
-from app.agents.tel_agent import create_tel_agent, process_turn
+from app.agents.tel_agent import create_tel_agent, process_turn, process_turn_streaming
 from app.config import settings
 from app.db.repository import get_calls_by_caller, save_call
 from app.logger import get_logger
@@ -140,35 +140,40 @@ async def handle_media_stream(websocket: WebSocket) -> None:
                     session.transcript.append(f"Utilisateur: {text}")
                     logger.info("user_speech", call_sid=session.call_sid, text=text)
 
-                    t1 = time.monotonic()
-                    reply = await process_turn(session.agent, text)
-                    llm_ms = int((time.monotonic() - t1) * 1000)
-
-                    logger.info(
-                        "turn_latency",
-                        call_sid=session.call_sid,
-                        stt_ms=stt_ms,
-                        llm_ms=llm_ms,
-                    )
-
-                    # Détection escalade vers humain
-                    if ESCALATION_SENTINEL in reply:
-                        reason = reply.split(":", 1)[-1].strip()
-                        session.escalation_requested = True
-                        farewell = "Je vous transfère immédiatement vers un conseiller. Un instant."
-                        session.transcript.append(f"Agent: {farewell}")
+                    if settings.llm_streaming:
                         session.agent_task = asyncio.create_task(
-                            _send_audio(websocket, session, farewell)
+                            _handle_streaming_turn(websocket, session, text, stt_ms)
                         )
-                        await session.agent_task
-                        await transfer_call(session.call_sid, reason=reason)
-                        await _handle_call_end(session)
-                        break
+                    else:
+                        t1 = time.monotonic()
+                        reply = await process_turn(session.agent, text)
+                        llm_ms = int((time.monotonic() - t1) * 1000)
 
-                    session.transcript.append(f"Agent: {reply}")
-                    logger.info("agent_reply", call_sid=session.call_sid, text=reply)
+                        logger.info(
+                            "turn_latency",
+                            call_sid=session.call_sid,
+                            stt_ms=stt_ms,
+                            llm_ms=llm_ms,
+                        )
 
-                    session.agent_task = asyncio.create_task(_send_audio(websocket, session, reply))
+                        if ESCALATION_SENTINEL in reply:
+                            reason = reply.split(":", 1)[-1].strip()
+                            session.escalation_requested = True
+                            farewell = "Je vous transfère vers un conseiller. Un instant."
+                            session.transcript.append(f"Agent: {farewell}")
+                            session.agent_task = asyncio.create_task(
+                                _send_audio(websocket, session, farewell)
+                            )
+                            await session.agent_task
+                            await transfer_call(session.call_sid, reason=reason)
+                            await _handle_call_end(session)
+                            break
+
+                        session.transcript.append(f"Agent: {reply}")
+                        logger.info("agent_reply", call_sid=session.call_sid, text=reply)
+                        session.agent_task = asyncio.create_task(
+                            _send_audio(websocket, session, reply)
+                        )
 
             elif event == "stop":
                 if session:
@@ -334,6 +339,76 @@ async def _handle_call_end(session: CallSession) -> None:
         )
     except Exception as exc:
         logger.error("webhook_notify_error", call_sid=session.call_sid, error=str(exc))
+
+
+# ---------------------------------------------------------------------------
+# Pipeline LLM streaming → TTS (latence first-audio réduite)
+# ---------------------------------------------------------------------------
+
+
+async def _handle_streaming_turn(
+    websocket: WebSocket, session: CallSession, user_text: str, stt_ms: int
+) -> None:
+    """Pipeline streaming : génère les phrases au fil du LLM et TTS chacune dès qu'elle est prête."""
+    session.agent_speaking = True
+    reply_parts: list[str] = []
+    t0 = time.monotonic()
+    first_sentence = True
+
+    try:
+        async for kind, content in process_turn_streaming(session.agent, user_text):
+            if kind == "escalade":
+                session.escalation_requested = True
+                farewell = "Je vous transfère vers un conseiller. Un instant."
+                mulaw = await synthesize_speech(farewell)
+                payload = base64.b64encode(mulaw).decode()
+                await websocket.send_json(
+                    {
+                        "event": "media",
+                        "streamSid": session.stream_sid,
+                        "media": {"payload": payload},
+                    }
+                )
+                await transfer_call(session.call_sid, reason=content)
+                break
+
+            if kind == "text" and content:
+                if first_sentence:
+                    llm_first_ms = int((time.monotonic() - t0) * 1000)
+                    logger.info(
+                        "turn_latency_streaming",
+                        call_sid=session.call_sid,
+                        stt_ms=stt_ms,
+                        llm_first_sentence_ms=llm_first_ms,
+                    )
+                    first_sentence = False
+
+                reply_parts.append(content)
+                t_tts = time.monotonic()
+                mulaw = await synthesize_speech(content)
+                tts_ms = int((time.monotonic() - t_tts) * 1000)
+                logger.info("tts_latency", call_sid=session.call_sid, tts_ms=tts_ms)
+
+                payload = base64.b64encode(mulaw).decode()
+                await websocket.send_json(
+                    {
+                        "event": "media",
+                        "streamSid": session.stream_sid,
+                        "media": {"payload": payload},
+                    }
+                )
+
+        full_reply = " ".join(reply_parts)
+        if full_reply:
+            session.transcript.append(f"Agent: {full_reply}")
+            logger.info("agent_reply", call_sid=session.call_sid, text=full_reply[:120])
+
+    except asyncio.CancelledError:
+        pass  # barge-in
+    except Exception as exc:
+        logger.error("streaming_turn_error", call_sid=session.call_sid, error=str(exc))
+    finally:
+        session.agent_speaking = False
 
 
 # ---------------------------------------------------------------------------

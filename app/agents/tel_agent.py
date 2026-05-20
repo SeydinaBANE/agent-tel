@@ -1,5 +1,9 @@
+import re
+from collections.abc import AsyncGenerator
+
 from agno.agent import Agent
 from agno.models.openai.like import OpenAILike
+from agno.utils.events import RunCompletedEvent, RunContentEvent, ToolCallCompletedEvent
 
 from app.agents.tools.calendar_tool import book_appointment, check_availability
 from app.agents.tools.crm_tool import get_client_info, log_call_summary
@@ -80,3 +84,49 @@ async def process_turn(agent: Agent, user_message: str) -> str:
     resolved = _SPECIAL_TOKENS.get(user_message, user_message)
     response = await agent.arun(resolved)
     return response.content
+
+
+_SENTENCE_BOUNDARY = re.compile(r"(?<=[.!?;])\s+")
+_ESCALADE_TOOL = "request_human_escalation"
+
+
+async def process_turn_streaming(
+    agent: Agent, user_message: str
+) -> AsyncGenerator[tuple[str, str], None]:
+    """Génère la réponse token par token.
+
+    Yields ``("text", sentence)`` pour chaque phrase complète dès qu'elle est
+    disponible, et ``("escalade", reason)`` si l'outil d'escalade est appelé.
+    Les tokens spéciaux (``__START__`` etc.) sont résolus en une seule passe non-streamée.
+    """
+    resolved = _SPECIAL_TOKENS.get(user_message, user_message)
+
+    # Tokens spéciaux — courtes réponses, pas besoin de streamer
+    if user_message in _SPECIAL_TOKENS:
+        response = await agent.arun(resolved)
+        yield ("text", response.content)
+        return
+
+    buffer = ""
+    async for event in agent.arun(resolved, stream=True, stream_events=True):  # type: ignore[misc]
+        if isinstance(event, RunContentEvent) and event.content:
+            buffer += str(event.content)
+            # Découpe en phrases dès qu'une frontière est détectée
+            while True:
+                match = _SENTENCE_BOUNDARY.search(buffer)
+                if not match:
+                    break
+                sentence = buffer[: match.start() + 1].strip()
+                buffer = buffer[match.end() :].strip()
+                if sentence:
+                    yield ("text", sentence)
+
+        elif isinstance(event, ToolCallCompletedEvent) and event.tool:
+            if event.tool.tool_name == _ESCALADE_TOOL:
+                yield ("escalade", event.tool.result or "")
+
+        elif isinstance(event, RunCompletedEvent):
+            break
+
+    if buffer.strip():
+        yield ("text", buffer.strip())

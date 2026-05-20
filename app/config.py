@@ -69,5 +69,8 @@ class Settings(BaseSettings):
     # Architecture multi-agents (true = superviseur + spécialistes, false = agent unique)
     multi_agent_mode: bool = False
 
+    # Streaming LLM → TTS token par token (réduit la latence first-audio de ~40%)
+    llm_streaming: bool = False
+
 
 settings = Settings()  # type: ignore[call-arg]

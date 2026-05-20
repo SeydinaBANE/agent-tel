@@ -84,7 +84,7 @@ Légende : ✅ Fait | ⬜ À faire | 🔥 Priorité haute
 - [x] Multi-agents — superviseur + CalendarSpecialist + CRMSpecialist (`MULTI_AGENT_MODE=true`)
 - [x] ElevenLabs TTS — remplace edge-tts si `ELEVENLABS_API_KEY` configuré
 - [x] Streaming TTS par phrase — `split_sentences()` + `synthesize_streaming()` pour réduire first-byte latency
-- [ ] Streaming LLM (tokens en temps réel → TTS au fil de l'eau — nécessite modèle SSE)
+- [x] Streaming LLM → TTS — `process_turn_streaming()` via Agno `RunContentEvent`, pipeline `_handle_streaming_turn`, `LLM_STREAMING=true`
 
 ---
 
