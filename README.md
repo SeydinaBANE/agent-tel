@@ -1,5 +1,13 @@
 # Agent Téléphonique IA
 
+![CI](https://github.com/SeydinaBANE/agent-tel/actions/workflows/ci.yml/badge.svg)
+![Python](https://img.shields.io/badge/python-3.11+-blue)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.116+-green)
+![Agno](https://img.shields.io/badge/Agno-2.6.8-purple)
+![Tests](https://img.shields.io/badge/tests-126%20passed-brightgreen)
+![Coverage](https://img.shields.io/badge/coverage-71%25-yellow)
+![License](https://img.shields.io/badge/licence-usage%20interne-lightgrey)
+
 Agent vocal intelligent entrant et sortant, construit avec **Agno 2.6.8**, **Twilio Media Streams** et **OpenRouter**. STT Whisper local (gratuit, aucune clé API). TTS edge-tts Microsoft (gratuit) ou ElevenLabs (optionnel).
 
 ## Fonctionnalités
