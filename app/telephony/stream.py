@@ -6,13 +6,14 @@ import time
 
 from fastapi import WebSocket, WebSocketDisconnect
 
+from app.agents.team import create_team_agent
 from app.agents.tel_agent import create_tel_agent, process_turn
 from app.config import settings
 from app.db.repository import get_calls_by_caller, save_call
 from app.logger import get_logger
 from app.services.escalation import ESCALATION_SENTINEL, transfer_call
 from app.services.stt import transcribe_audio
-from app.services.tts import synthesize_speech
+from app.services.tts import synthesize_speech, synthesize_streaming
 from app.services.webhook import notify_call_ended
 
 logger = get_logger(__name__)
@@ -28,7 +29,8 @@ class CallSession:
     def __init__(self, call_sid: str, caller: str):
         self.call_sid = call_sid
         self.caller = caller
-        self.agent = create_tel_agent(caller_number=caller)
+        factory = create_team_agent if settings.multi_agent_mode else create_tel_agent
+        self.agent = factory(caller_number=caller)
         self.audio_buffer = bytearray()
         self.stream_sid: str | None = None
         self.silence_counter = 0
@@ -47,7 +49,8 @@ class CallSession:
         try:
             records = await get_calls_by_caller(self.caller, limit=3)
             if records:
-                self.agent = create_tel_agent(caller_number=self.caller, memory_records=records)
+                factory = create_team_agent if settings.multi_agent_mode else create_tel_agent
+                self.agent = factory(caller_number=self.caller, memory_records=records)
         except Exception as exc:
             logger.warning("memory_load_error", call_sid=self.call_sid, error=str(exc))
 
@@ -196,21 +199,37 @@ async def handle_media_stream(websocket: WebSocket) -> None:
 
 
 async def _send_audio(websocket: WebSocket, session: CallSession, text: str) -> None:
+    """Envoie l'audio — streaming phrase par phrase si TTS_SENTENCE_STREAMING=true."""
     session.agent_speaking = True
+    t0 = time.monotonic()
+    chunks_sent = 0
     try:
-        t0 = time.monotonic()
-        mulaw = await synthesize_speech(text)
-        tts_ms = int((time.monotonic() - t0) * 1000)
-        logger.info("tts_latency", call_sid=session.call_sid, tts_ms=tts_ms)
+        if settings.tts_sentence_streaming:
+            async for mulaw in synthesize_streaming(text):
+                payload = base64.b64encode(mulaw).decode()
+                await websocket.send_json(
+                    {
+                        "event": "media",
+                        "streamSid": session.stream_sid,
+                        "media": {"payload": payload},
+                    }
+                )
+                chunks_sent += 1
+        else:
+            mulaw = await synthesize_speech(text)
+            payload = base64.b64encode(mulaw).decode()
+            await websocket.send_json(
+                {
+                    "event": "media",
+                    "streamSid": session.stream_sid,
+                    "media": {"payload": payload},
+                }
+            )
+            chunks_sent = 1
 
-        payload = base64.b64encode(mulaw).decode()
-        await websocket.send_json(
-            {
-                "event": "media",
-                "streamSid": session.stream_sid,
-                "media": {"payload": payload},
-            }
-        )
+        tts_ms = int((time.monotonic() - t0) * 1000)
+        logger.info("tts_latency", call_sid=session.call_sid, tts_ms=tts_ms, chunks=chunks_sent)
+
     except asyncio.CancelledError:
         pass  # barge-in — silencieux
     except Exception as exc:

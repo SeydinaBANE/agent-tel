@@ -75,16 +75,16 @@ Légende : ✅ Fait | ⬜ À faire | 🔥 Priorité haute
 
 ---
 
-## Phase 5 — Améliorations IA ✅ (partiel)
+## Phase 5 — Améliorations IA ✅
 
 - [x] Mémoire persistante par client — historique des 3 derniers appels injecté dans le prompt
 - [x] Escalade vers humain — outil `request_human_escalation` + transfert Twilio REST
 - [x] Résumé SMS post-appel — envoyé automatiquement si `SEND_SUMMARY_SMS=true`
 - [x] Détection de langue automatique — `WHISPER_LANGUAGE=` (vide = Whisper auto-détecte)
-- [ ] Multi-agents : superviseur + agents spécialisés par domaine métier
-- [ ] Voix personnalisée avec ElevenLabs (remplacement edge-tts)
-- [ ] Streaming TTS pour réduire la latence (chunked audio)
-- [ ] Streaming LLM (tokens en temps réel → TTS au fil de l'eau)
+- [x] Multi-agents — superviseur + CalendarSpecialist + CRMSpecialist (`MULTI_AGENT_MODE=true`)
+- [x] ElevenLabs TTS — remplace edge-tts si `ELEVENLABS_API_KEY` configuré
+- [x] Streaming TTS par phrase — `split_sentences()` + `synthesize_streaming()` pour réduire first-byte latency
+- [ ] Streaming LLM (tokens en temps réel → TTS au fil de l'eau — nécessite modèle SSE)
 
 ---
 

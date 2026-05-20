@@ -58,5 +58,16 @@ class Settings(BaseSettings):
     # Résumé SMS post-appel (true = envoie un SMS récapitulatif à l'appelant)
     send_summary_sms: bool = False
 
+    # ElevenLabs TTS (optionnel — remplace edge-tts si configuré)
+    elevenlabs_api_key: str = ""
+    elevenlabs_voice_id: str = "21m00Tcm4TlvDq8ikWAM"  # Rachel (multilingual)
+    elevenlabs_model_id: str = "eleven_multilingual_v2"
+
+    # Streaming TTS par phrase (true = envoie l'audio phrase par phrase)
+    tts_sentence_streaming: bool = True
+
+    # Architecture multi-agents (true = superviseur + spécialistes, false = agent unique)
+    multi_agent_mode: bool = False
+
 
 settings = Settings()  # type: ignore[call-arg]

@@ -23,6 +23,9 @@ edge-tts>=6.1.0
 # WebSocket
 websockets>=12.0
 
+# ElevenLabs TTS (optionnel)
+# elevenlabs>=1.0.0  # ou via httpx direct (déjà inclus)
+
 # Rate limiting
 slowapi>=0.1.9
 
