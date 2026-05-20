@@ -24,8 +24,25 @@ _E164 = re.compile(r"^\+[1-9]\d{1,14}$")
 limiter = Limiter(key_func=get_remote_address)
 
 
+def _check_service_config() -> None:
+    """Bloque le démarrage si les mocks sont désactivés mais les services non configurés."""
+    if settings.allow_service_mocks:
+        return
+    missing = []
+    if not settings.crm_api_url:
+        missing.append("CRM_API_URL")
+    if not settings.google_calendar_credentials:
+        missing.append("GOOGLE_CALENDAR_CREDENTIALS")
+    if missing:
+        raise RuntimeError(
+            f"ALLOW_SERVICE_MOCKS=false mais ces variables sont manquantes : {', '.join(missing)}. "
+            "Configurez les vrais services ou passez ALLOW_SERVICE_MOCKS=true."
+        )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    _check_service_config()
     if settings.sentry_dsn:
         import sentry_sdk
 
@@ -45,13 +62,12 @@ app.include_router(admin_router)
 
 @app.get("/health")
 async def health():
-    call_count = len(await get_recent_calls(limit=1))
-    return {
-        "status": "ok",
-        "version": app.version,
-        "db": "ok" if call_count >= 0 else "error",
-        "uptime_hint": "use /admin/calls for metrics",
-    }
+    db_status = "ok"
+    try:
+        await get_recent_calls(limit=1)
+    except Exception:
+        db_status = "error"
+    return {"status": "ok", "version": app.version, "db": db_status}
 
 
 # --- Webhooks Twilio (appels entrants) — signature validée ---

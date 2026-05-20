@@ -1,9 +1,10 @@
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.db.models import CallRecord
 from app.db.repository import get_call_by_sid, get_call_stats, get_calls_by_caller, get_recent_calls
+from app.middleware.admin_auth import verify_admin_key
 
-router = APIRouter(prefix="/admin", tags=["admin"])
+router = APIRouter(prefix="/admin", tags=["admin"], dependencies=[Depends(verify_admin_key)])
 
 
 def _serialize(record: CallRecord) -> dict:

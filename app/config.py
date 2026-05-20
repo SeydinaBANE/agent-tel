@@ -72,5 +72,11 @@ class Settings(BaseSettings):
     # Streaming LLM → TTS token par token (réduit la latence first-audio de ~40%)
     llm_streaming: bool = False
 
+    # Sécurité admin — clé API pour /admin/* (vide = bypass en dev)
+    admin_api_key: str = ""
+
+    # Mocks services tiers (false = erreur au démarrage si CRM/Calendar non configurés)
+    allow_service_mocks: bool = True
+
 
 settings = Settings()  # type: ignore[call-arg]
