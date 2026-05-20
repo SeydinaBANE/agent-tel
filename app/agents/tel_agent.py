@@ -25,6 +25,12 @@ Capacités disponibles :
 Commence chaque appel entrant par : "Bonjour, vous êtes bien chez [entreprise], je suis {settings.agent_name}. Comment puis-je vous aider ?"
 """
 
+_SPECIAL_TOKENS = {
+    "__START__": "L'appel vient de commencer. Dis bonjour chaleureusement.",
+    "__TIMEOUT__": "L'appelant n'a plus répondu depuis un moment. Dis poliment au revoir et que tu restes disponible.",
+    "__END__": "L'appel se termine. Remercie le client et enregistre le résumé dans le CRM.",
+}
+
 
 def _build_model() -> OpenAILike:
     return OpenAILike(
@@ -49,5 +55,6 @@ def create_tel_agent(caller_number: str | None = None) -> Agent:
 
 async def process_turn(agent: Agent, user_message: str) -> str:
     """Traite un tour de conversation et retourne la réponse textuelle."""
-    response = await agent.arun(user_message)
+    resolved = _SPECIAL_TOKENS.get(user_message, user_message)
+    response = await agent.arun(resolved)
     return response.content

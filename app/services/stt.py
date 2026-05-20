@@ -8,6 +8,9 @@ import audioop
 import whisper
 
 from app.config import settings
+from app.logger import get_logger
+
+logger = get_logger(__name__)
 
 _model: whisper.Whisper | None = None
 
@@ -20,24 +23,36 @@ def _get_model() -> whisper.Whisper:
 
 
 async def transcribe_audio(audio_bytes: bytes, language: str | None = None) -> str:
-    """Convertit l'audio mulaw 8kHz Twilio en texte via Whisper local."""
+    """Convertit l'audio mulaw 8kHz Twilio en texte via Whisper local. Retry x3."""
     wav_data = _mulaw_to_wav(audio_bytes)
+    lang = language or settings.agent_language
 
-    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
-        tmp.write(wav_data)
-        tmp_path = tmp.name
+    last_exc: Exception | None = None
+    for attempt in range(settings.max_retries):
+        tmp_path: str | None = None
+        try:
+            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+                tmp.write(wav_data)
+                tmp_path = tmp.name
 
-    try:
-        lang = language or settings.agent_language
-        result = await asyncio.to_thread(
-            _get_model().transcribe,
-            tmp_path,
-            language=lang,
-            fp16=False,
-        )
-        return str(result["text"]).strip()
-    finally:
-        os.unlink(tmp_path)
+            result = await asyncio.to_thread(
+                _get_model().transcribe,
+                tmp_path,
+                language=lang,
+                fp16=False,
+            )
+            return str(result["text"]).strip()
+
+        except Exception as exc:
+            last_exc = exc
+            logger.warning("stt_retry", attempt=attempt + 1, error=str(exc))
+            await asyncio.sleep(0.4 * (attempt + 1))
+
+        finally:
+            if tmp_path and os.path.exists(tmp_path):
+                os.unlink(tmp_path)
+
+    raise RuntimeError(f"STT échoué après {settings.max_retries} tentatives") from last_exc
 
 
 def _mulaw_to_wav(mulaw_data: bytes) -> bytes:
