@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import desc, select
+from sqlalchemy import desc, func, select
 
 from app.db.models import CallRecord
 from app.db.session import AsyncSessionLocal
@@ -55,3 +55,21 @@ async def get_calls_by_caller(caller: str, limit: int = 10) -> list[CallRecord]:
             .limit(limit)
         )
         return list(result.scalars().all())
+
+
+async def get_call_stats() -> dict:
+    """Statistiques agrégées : total, durée moyenne, tours moyens."""
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(
+            select(
+                func.count(CallRecord.id).label("total_calls"),
+                func.avg(CallRecord.duration_secs).label("avg_duration"),
+                func.avg(CallRecord.turns).label("avg_turns"),
+            )
+        )
+        row = result.one()
+        return {
+            "total_calls": row.total_calls or 0,
+            "avg_duration_secs": round(row.avg_duration or 0.0, 1),
+            "avg_turns": round(row.avg_turns or 0.0, 1),
+        }

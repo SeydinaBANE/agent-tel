@@ -49,5 +49,28 @@ class Settings(BaseSettings):
     # Rate limiting (requêtes/minute par IP sur POST /calls/outbound)
     rate_limit_calls_per_minute: int = 10
 
+    # Escalade vers humain (optionnel — numéro E.164 du conseiller)
+    escalation_phone: str = ""
+
+    # STT : langue Whisper — vide = détection automatique, "fr" = forcer le français
+    whisper_language: str = "fr"
+
+    # Résumé SMS post-appel (true = envoie un SMS récapitulatif à l'appelant)
+    send_summary_sms: bool = False
+
+    # ElevenLabs TTS (optionnel — remplace edge-tts si configuré)
+    elevenlabs_api_key: str = ""
+    elevenlabs_voice_id: str = "21m00Tcm4TlvDq8ikWAM"  # Rachel (multilingual)
+    elevenlabs_model_id: str = "eleven_multilingual_v2"
+
+    # Streaming TTS par phrase (true = envoie l'audio phrase par phrase)
+    tts_sentence_streaming: bool = True
+
+    # Architecture multi-agents (true = superviseur + spécialistes, false = agent unique)
+    multi_agent_mode: bool = False
+
+    # Streaming LLM → TTS token par token (réduit la latence first-audio de ~40%)
+    llm_streaming: bool = False
+
 
 settings = Settings()  # type: ignore[call-arg]

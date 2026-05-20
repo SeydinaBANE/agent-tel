@@ -64,16 +64,27 @@ Légende : ✅ Fait | ⬜ À faire | 🔥 Priorité haute
 
 ---
 
-## Phase 5 — Améliorations IA
+## Phase 4 — Métriques (restant)
 
-- [ ] Mémoire persistante par client (Agno Memory + base de données)
-- [ ] Multi-agents : superviseur + agents spécialisés par domaine métier
-- [ ] Escalade vers humain si demande hors périmètre (transfert d'appel Twilio)
-- [ ] Résumé automatique post-appel envoyé par email/SMS
-- [ ] Voix personnalisée avec ElevenLabs (remplacement edge-tts)
-- [ ] Détection de langue automatique (Whisper `language=None`)
-- [ ] Streaming TTS pour réduire la latence (chunked audio)
-- [ ] Streaming LLM (tokens en temps réel → TTS au fil de l'eau)
+- [x] Métriques latence STT/LLM/TTS — loggées par tour (`turn_latency`, `tts_latency`)
+- [x] Endpoint `GET /admin/metrics` — total appels, durée moyenne, tours moyens
+- [ ] Variables d'environnement dans un secrets manager (Doppler / AWS Secrets Manager)
+- [ ] Déploiement Railway / Render / EC2
+- [ ] Configurer domaine custom + certificat TLS (requis pour `wss://`)
+- [ ] Alertes en cas de taux d'erreur > seuil
+
+---
+
+## Phase 5 — Améliorations IA ✅
+
+- [x] Mémoire persistante par client — historique des 3 derniers appels injecté dans le prompt
+- [x] Escalade vers humain — outil `request_human_escalation` + transfert Twilio REST
+- [x] Résumé SMS post-appel — envoyé automatiquement si `SEND_SUMMARY_SMS=true`
+- [x] Détection de langue automatique — `WHISPER_LANGUAGE=` (vide = Whisper auto-détecte)
+- [x] Multi-agents — superviseur + CalendarSpecialist + CRMSpecialist (`MULTI_AGENT_MODE=true`)
+- [x] ElevenLabs TTS — remplace edge-tts si `ELEVENLABS_API_KEY` configuré
+- [x] Streaming TTS par phrase — `split_sentences()` + `synthesize_streaming()` pour réduire first-byte latency
+- [x] Streaming LLM → TTS — `process_turn_streaming()` via Agno `RunContentEvent`, pipeline `_handle_streaming_turn`, `LLM_STREAMING=true`
 
 ---
 

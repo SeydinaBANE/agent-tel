@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Query
 
 from app.db.models import CallRecord
-from app.db.repository import get_call_by_sid, get_calls_by_caller, get_recent_calls
+from app.db.repository import get_call_by_sid, get_call_stats, get_calls_by_caller, get_recent_calls
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -39,3 +39,9 @@ async def get_call(call_sid: str):
     if not record:
         raise HTTPException(status_code=404, detail=f"Appel '{call_sid}' introuvable.")
     return _serialize(record)
+
+
+@router.get("/metrics")
+async def metrics():
+    """Statistiques agrégées : total appels, durée moyenne, tours moyens."""
+    return await get_call_stats()

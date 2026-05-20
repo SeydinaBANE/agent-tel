@@ -1,10 +1,10 @@
 import asyncio
+import audioop
 import io
 import os
 import tempfile
 import wave
 
-import audioop
 import whisper
 
 from app.config import settings
@@ -25,7 +25,8 @@ def _get_model() -> whisper.Whisper:
 async def transcribe_audio(audio_bytes: bytes, language: str | None = None) -> str:
     """Convertit l'audio mulaw 8kHz Twilio en texte via Whisper local. Retry x3."""
     wav_data = _mulaw_to_wav(audio_bytes)
-    lang = language or settings.agent_language
+    # whisper_language vide → None → Whisper auto-détecte la langue
+    lang: str | None = language or (settings.whisper_language or None)
 
     last_exc: Exception | None = None
     for attempt in range(settings.max_retries):

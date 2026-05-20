@@ -6,12 +6,14 @@ import time
 
 from fastapi import WebSocket, WebSocketDisconnect
 
-from app.agents.tel_agent import create_tel_agent, process_turn
+from app.agents.team import create_team_agent
+from app.agents.tel_agent import create_tel_agent, process_turn, process_turn_streaming
 from app.config import settings
-from app.db.repository import save_call
+from app.db.repository import get_calls_by_caller, save_call
 from app.logger import get_logger
+from app.services.escalation import ESCALATION_SENTINEL, transfer_call
 from app.services.stt import transcribe_audio
-from app.services.tts import synthesize_speech
+from app.services.tts import synthesize_speech, synthesize_streaming
 from app.services.webhook import notify_call_ended
 
 logger = get_logger(__name__)
@@ -27,7 +29,8 @@ class CallSession:
     def __init__(self, call_sid: str, caller: str):
         self.call_sid = call_sid
         self.caller = caller
-        self.agent = create_tel_agent(caller_number=caller)
+        factory = create_team_agent if settings.multi_agent_mode else create_tel_agent
+        self.agent = factory(caller_number=caller)
         self.audio_buffer = bytearray()
         self.stream_sid: str | None = None
         self.silence_counter = 0
@@ -37,6 +40,19 @@ class CallSession:
         self.transcript: list[str] = []
         self.start_time = time.monotonic()
         self.last_activity = time.monotonic()
+        self.escalation_requested = False
+
+    async def load_memory(self) -> None:
+        """Recrée l'agent avec l'historique des appels précédents injecté."""
+        if not _E164.match(self.caller):
+            return
+        try:
+            records = await get_calls_by_caller(self.caller, limit=3)
+            if records:
+                factory = create_team_agent if settings.multi_agent_mode else create_tel_agent
+                self.agent = factory(caller_number=self.caller, memory_records=records)
+        except Exception as exc:
+            logger.warning("memory_load_error", call_sid=self.call_sid, error=str(exc))
 
     def add_audio(self, payload: str) -> None:
         chunk = base64.b64decode(payload)
@@ -89,10 +105,13 @@ async def handle_media_stream(websocket: WebSocket) -> None:
                 caller = start.get("customParameters", {}).get("caller", "inconnu")
                 session = CallSession(call_sid=call_sid, caller=caller)
                 session.stream_sid = start["streamSid"]
+
+                # Charge l'historique du client avant le premier tour
+                await session.load_memory()
+
                 logger.info("call_started", call_sid=call_sid, caller=caller)
 
                 timeout_task = asyncio.create_task(_timeout_watchdog(websocket, session))
-                # Salutation initiale en tâche de fond (cancellable si barge-in)
                 session.agent_task = asyncio.create_task(
                     _send_audio(websocket, session, "__START__")
                 )
@@ -100,30 +119,61 @@ async def handle_media_stream(websocket: WebSocket) -> None:
             elif event == "media" and session:
                 session.add_audio(message["media"]["payload"])
 
-                # --- Barge-in : l'utilisateur parle pendant que l'agent parle ---
+                # --- Barge-in ---
                 if session.agent_speaking and session.speaking:
                     _cancel_agent(session)
                     await _send_clear(websocket, session.stream_sid)
                     logger.info("barge_in", call_sid=session.call_sid)
 
-                # Nouveau tour uniquement quand l'agent a fini
                 if _agent_free(session) and session.should_transcribe():
                     audio_data = session.flush_audio()
                     if len(audio_data) < MIN_AUDIO_BYTES:
                         continue
 
+                    t0 = time.monotonic()
                     text = await transcribe_audio(audio_data)
+                    stt_ms = int((time.monotonic() - t0) * 1000)
+
                     if not text:
                         continue
 
                     session.transcript.append(f"Utilisateur: {text}")
                     logger.info("user_speech", call_sid=session.call_sid, text=text)
 
-                    reply = await process_turn(session.agent, text)
-                    session.transcript.append(f"Agent: {reply}")
-                    logger.info("agent_reply", call_sid=session.call_sid, text=reply)
+                    if settings.llm_streaming:
+                        session.agent_task = asyncio.create_task(
+                            _handle_streaming_turn(websocket, session, text, stt_ms)
+                        )
+                    else:
+                        t1 = time.monotonic()
+                        reply = await process_turn(session.agent, text)
+                        llm_ms = int((time.monotonic() - t1) * 1000)
 
-                    session.agent_task = asyncio.create_task(_send_audio(websocket, session, reply))
+                        logger.info(
+                            "turn_latency",
+                            call_sid=session.call_sid,
+                            stt_ms=stt_ms,
+                            llm_ms=llm_ms,
+                        )
+
+                        if ESCALATION_SENTINEL in reply:
+                            reason = reply.split(":", 1)[-1].strip()
+                            session.escalation_requested = True
+                            farewell = "Je vous transfère vers un conseiller. Un instant."
+                            session.transcript.append(f"Agent: {farewell}")
+                            session.agent_task = asyncio.create_task(
+                                _send_audio(websocket, session, farewell)
+                            )
+                            await session.agent_task
+                            await transfer_call(session.call_sid, reason=reason)
+                            await _handle_call_end(session)
+                            break
+
+                        session.transcript.append(f"Agent: {reply}")
+                        logger.info("agent_reply", call_sid=session.call_sid, text=reply)
+                        session.agent_task = asyncio.create_task(
+                            _send_audio(websocket, session, reply)
+                        )
 
             elif event == "stop":
                 if session:
@@ -154,17 +204,37 @@ async def handle_media_stream(websocket: WebSocket) -> None:
 
 
 async def _send_audio(websocket: WebSocket, session: CallSession, text: str) -> None:
+    """Envoie l'audio — streaming phrase par phrase si TTS_SENTENCE_STREAMING=true."""
     session.agent_speaking = True
+    t0 = time.monotonic()
+    chunks_sent = 0
     try:
-        mulaw = await synthesize_speech(text)
-        payload = base64.b64encode(mulaw).decode()
-        await websocket.send_json(
-            {
-                "event": "media",
-                "streamSid": session.stream_sid,
-                "media": {"payload": payload},
-            }
-        )
+        if settings.tts_sentence_streaming:
+            async for mulaw in synthesize_streaming(text):
+                payload = base64.b64encode(mulaw).decode()
+                await websocket.send_json(
+                    {
+                        "event": "media",
+                        "streamSid": session.stream_sid,
+                        "media": {"payload": payload},
+                    }
+                )
+                chunks_sent += 1
+        else:
+            mulaw = await synthesize_speech(text)
+            payload = base64.b64encode(mulaw).decode()
+            await websocket.send_json(
+                {
+                    "event": "media",
+                    "streamSid": session.stream_sid,
+                    "media": {"payload": payload},
+                }
+            )
+            chunks_sent = 1
+
+        tts_ms = int((time.monotonic() - t0) * 1000)
+        logger.info("tts_latency", call_sid=session.call_sid, tts_ms=tts_ms, chunks=chunks_sent)
+
     except asyncio.CancelledError:
         pass  # barge-in — silencieux
     except Exception as exc:
@@ -213,17 +283,19 @@ async def _handle_call_end(session: CallSession) -> None:
         caller=session.caller,
         duration_secs=session.duration,
         turns=turns,
+        escalated=session.escalation_requested,
     )
 
     # Résumé LLM → CRM
-    if session.transcript:
-        summary = (
+    summary_text = ""
+    if session.transcript and not session.escalation_requested:
+        summary_text = (
             f"Durée: {session.duration}s. "
             f"{turns} échange(s). "
             f"Transcript: {' | '.join(session.transcript[:6])}"
         )
         try:
-            await process_turn(session.agent, f"__END__ {summary}")
+            await process_turn(session.agent, f"__END__ {summary_text}")
         except Exception as exc:
             logger.error("end_summary_error", call_sid=session.call_sid, error=str(exc))
 
@@ -235,9 +307,27 @@ async def _handle_call_end(session: CallSession) -> None:
             duration_secs=session.duration,
             turns=turns,
             transcript="\n".join(session.transcript),
+            status="escalated" if session.escalation_requested else "completed",
         )
     except Exception as exc:
         logger.error("db_save_error", call_sid=session.call_sid, error=str(exc))
+
+    # SMS résumé post-appel
+    if settings.send_summary_sms and summary_text and _E164.match(session.caller):
+        try:
+            from twilio.rest import Client
+
+            client = Client(settings.twilio_account_sid, settings.twilio_auth_token)
+            body = f"Résumé de votre appel : {summary_text[:140]}"
+            await asyncio.to_thread(
+                client.messages.create,
+                body=body,
+                from_=settings.twilio_phone_number,
+                to=session.caller,
+            )
+            logger.info("summary_sms_sent", call_sid=session.call_sid, caller=session.caller)
+        except Exception as exc:
+            logger.error("summary_sms_error", call_sid=session.call_sid, error=str(exc))
 
     # Notification Slack / Teams
     try:
@@ -249,6 +339,76 @@ async def _handle_call_end(session: CallSession) -> None:
         )
     except Exception as exc:
         logger.error("webhook_notify_error", call_sid=session.call_sid, error=str(exc))
+
+
+# ---------------------------------------------------------------------------
+# Pipeline LLM streaming → TTS (latence first-audio réduite)
+# ---------------------------------------------------------------------------
+
+
+async def _handle_streaming_turn(
+    websocket: WebSocket, session: CallSession, user_text: str, stt_ms: int
+) -> None:
+    """Pipeline streaming : génère les phrases au fil du LLM et TTS chacune dès qu'elle est prête."""
+    session.agent_speaking = True
+    reply_parts: list[str] = []
+    t0 = time.monotonic()
+    first_sentence = True
+
+    try:
+        async for kind, content in process_turn_streaming(session.agent, user_text):
+            if kind == "escalade":
+                session.escalation_requested = True
+                farewell = "Je vous transfère vers un conseiller. Un instant."
+                mulaw = await synthesize_speech(farewell)
+                payload = base64.b64encode(mulaw).decode()
+                await websocket.send_json(
+                    {
+                        "event": "media",
+                        "streamSid": session.stream_sid,
+                        "media": {"payload": payload},
+                    }
+                )
+                await transfer_call(session.call_sid, reason=content)
+                break
+
+            if kind == "text" and content:
+                if first_sentence:
+                    llm_first_ms = int((time.monotonic() - t0) * 1000)
+                    logger.info(
+                        "turn_latency_streaming",
+                        call_sid=session.call_sid,
+                        stt_ms=stt_ms,
+                        llm_first_sentence_ms=llm_first_ms,
+                    )
+                    first_sentence = False
+
+                reply_parts.append(content)
+                t_tts = time.monotonic()
+                mulaw = await synthesize_speech(content)
+                tts_ms = int((time.monotonic() - t_tts) * 1000)
+                logger.info("tts_latency", call_sid=session.call_sid, tts_ms=tts_ms)
+
+                payload = base64.b64encode(mulaw).decode()
+                await websocket.send_json(
+                    {
+                        "event": "media",
+                        "streamSid": session.stream_sid,
+                        "media": {"payload": payload},
+                    }
+                )
+
+        full_reply = " ".join(reply_parts)
+        if full_reply:
+            session.transcript.append(f"Agent: {full_reply}")
+            logger.info("agent_reply", call_sid=session.call_sid, text=full_reply[:120])
+
+    except asyncio.CancelledError:
+        pass  # barge-in
+    except Exception as exc:
+        logger.error("streaming_turn_error", call_sid=session.call_sid, error=str(exc))
+    finally:
+        session.agent_speaking = False
 
 
 # ---------------------------------------------------------------------------
