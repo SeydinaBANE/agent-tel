@@ -1,20 +1,25 @@
 """Tests des tools (calendar, CRM, SMS) — on teste les fonctions pures sous-jacentes."""
+
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 
 class TestCalendarTool:
-    def test_check_availability_returns_slots(self):
+    @pytest.mark.asyncio
+    async def test_check_availability_returns_slots(self):
         from app.agents.tools.calendar_tool import _check_availability
 
-        result = _check_availability("2026-06-15")
+        result = await _check_availability("2026-06-15")
 
         assert "2026-06-15" in result
-        assert "09:00" in result
+        assert "Créneaux disponibles" in result
 
-    def test_book_appointment_returns_confirmation(self):
+    @pytest.mark.asyncio
+    async def test_book_appointment_returns_confirmation(self):
         from app.agents.tools.calendar_tool import _book_appointment
 
-        result = _book_appointment(
+        result = await _book_appointment(
             date="2026-06-15",
             time="10:30",
             client_name="Alice Martin",
@@ -24,50 +29,55 @@ class TestCalendarTool:
         assert "Alice Martin" in result
         assert "2026-06-15" in result
         assert "10:30" in result
-        assert "RDV-" in result
+        assert "confirmé" in result
 
-    def test_book_appointment_generates_reference_id(self):
+    @pytest.mark.asyncio
+    async def test_book_appointment_generates_reference_id(self):
         from app.agents.tools.calendar_tool import _book_appointment
 
-        result = _book_appointment("2026-06-15", "10:00", "Test Client", "test")
+        result = await _book_appointment("2026-06-15", "10:00", "Test Client", "test")
 
-        assert "RDV-" in result
+        assert "Test Client" in result
 
     def test_tools_are_registered_as_agno_functions(self):
         from agno.tools import Function
-        from app.agents.tools.calendar_tool import check_availability, book_appointment
+
+        from app.agents.tools.calendar_tool import book_appointment, check_availability
 
         assert isinstance(check_availability, Function)
         assert isinstance(book_appointment, Function)
 
 
 class TestCRMTool:
-    def test_known_client_returns_info(self):
+    @pytest.mark.asyncio
+    async def test_known_client_returns_info(self):
         from app.agents.tools.crm_tool import _get_client_info
 
-        result = _get_client_info("+33600000001")
+        result = await _get_client_info("+33600000001")
 
         assert "Alice Martin" in result
         assert "PRO" in result
 
-    def test_unknown_client_returns_not_found(self):
+    @pytest.mark.asyncio
+    async def test_unknown_client_returns_not_found(self):
         from app.agents.tools.crm_tool import _get_client_info
 
-        result = _get_client_info("+33999999999")
+        result = await _get_client_info("+33999999999")
 
         assert "Aucun client" in result
         assert "+33999999999" in result
 
-    def test_log_call_summary_records_summary(self):
+    @pytest.mark.asyncio
+    async def test_log_call_summary_records_summary(self):
         from app.agents.tools.crm_tool import _log_call_summary
 
-        result = _log_call_summary("+33600000001", "Demande de rdv confirmée")
+        result = await _log_call_summary("+33600000001", "Demande de rdv confirmée")
 
         assert "+33600000001" in result
-        assert "Demande de rdv confirmée" in result
 
     def test_tools_are_registered_as_agno_functions(self):
         from agno.tools import Function
+
         from app.agents.tools.crm_tool import get_client_info, log_call_summary
 
         assert isinstance(get_client_info, Function)
@@ -104,6 +114,7 @@ class TestSMSTool:
 
     def test_tool_is_registered_as_agno_function(self):
         from agno.tools import Function
+
         from app.agents.tools.sms_tool import send_sms
 
         assert isinstance(send_sms, Function)

@@ -1,23 +1,20 @@
 from agno.tools import tool
 
-_MOCK_CRM: dict[str, dict] = {
-    "+33600000001": {"name": "Alice Martin", "account": "PRO", "last_contact": "2026-05-10"},
-    "+33600000002": {"name": "Bob Dupont", "account": "STANDARD", "last_contact": "2026-04-22"},
-}
+from app.services.crm import get_contact, log_activity
 
 
-def _get_client_info(phone_number: str) -> str:
-    client = _MOCK_CRM.get(phone_number)
-    if not client:
+async def _get_client_info(phone_number: str) -> str:
+    contact = await get_contact(phone_number)
+    if not contact:
         return f"Aucun client trouvé pour le numéro {phone_number}."
-    return (
-        f"Client : {client['name']} | Compte : {client['account']} "
-        f"| Dernier contact : {client['last_contact']}"
-    )
+    name = contact.get("name", "Inconnu")
+    account = contact.get("account", contact.get("properties", {}).get("lifecyclestage", "?"))
+    last = contact.get("last_contact", contact.get("properties", {}).get("lastmodifieddate", "?"))
+    return f"Client : {name} | Compte : {account} | Dernier contact : {last}"
 
 
-def _log_call_summary(phone_number: str, summary: str) -> str:
-    return f"Résumé enregistré pour {phone_number} : « {summary} »"
+async def _log_call_summary(phone_number: str, summary: str) -> str:
+    return await log_activity(phone_number, summary)
 
 
 get_client_info = tool(

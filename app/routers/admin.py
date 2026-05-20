@@ -1,0 +1,41 @@
+from fastapi import APIRouter, HTTPException, Query
+
+from app.db.models import CallRecord
+from app.db.repository import get_call_by_sid, get_calls_by_caller, get_recent_calls
+
+router = APIRouter(prefix="/admin", tags=["admin"])
+
+
+def _serialize(record: CallRecord) -> dict:
+    return {
+        "id": record.id,
+        "call_sid": record.call_sid,
+        "caller": record.caller,
+        "direction": record.direction,
+        "duration_secs": record.duration_secs,
+        "turns": record.turns,
+        "status": record.status,
+        "created_at": record.created_at.isoformat() if record.created_at else None,
+        "transcript": record.transcript,
+    }
+
+
+@router.get("/calls")
+async def list_calls(
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    caller: str | None = Query(default=None),
+):
+    if caller:
+        records = await get_calls_by_caller(caller, limit=limit)
+    else:
+        records = await get_recent_calls(limit=limit, offset=offset)
+    return {"calls": [_serialize(r) for r in records], "count": len(records)}
+
+
+@router.get("/calls/{call_sid}")
+async def get_call(call_sid: str):
+    record = await get_call_by_sid(call_sid)
+    if not record:
+        raise HTTPException(status_code=404, detail=f"Appel '{call_sid}' introuvable.")
+    return _serialize(record)

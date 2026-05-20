@@ -8,15 +8,17 @@ from fastapi import WebSocket, WebSocketDisconnect
 
 from app.agents.tel_agent import create_tel_agent, process_turn
 from app.config import settings
+from app.db.repository import save_call
 from app.logger import get_logger
 from app.services.stt import transcribe_audio
 from app.services.tts import synthesize_speech
+from app.services.webhook import notify_call_ended
 
 logger = get_logger(__name__)
 
-SILENCE_THRESHOLD = 0.8   # secondes
-CHUNK_DURATION = 0.02     # 20ms par paquet Twilio
-MIN_AUDIO_BYTES = 1600    # ~100ms — en-dessous on ignore
+SILENCE_THRESHOLD = 0.8  # secondes
+CHUNK_DURATION = 0.02  # 20ms par paquet Twilio
+MIN_AUDIO_BYTES = 1600  # ~100ms — en-dessous on ignore
 
 _E164 = re.compile(r"^\+[1-9]\d{1,14}$")
 
@@ -70,6 +72,7 @@ class CallSession:
 # WebSocket handler principal
 # ---------------------------------------------------------------------------
 
+
 async def handle_media_stream(websocket: WebSocket) -> None:
     await websocket.accept()
     session: CallSession | None = None
@@ -88,9 +91,7 @@ async def handle_media_stream(websocket: WebSocket) -> None:
                 session.stream_sid = start["streamSid"]
                 logger.info("call_started", call_sid=call_sid, caller=caller)
 
-                timeout_task = asyncio.create_task(
-                    _timeout_watchdog(websocket, session)
-                )
+                timeout_task = asyncio.create_task(_timeout_watchdog(websocket, session))
                 # Salutation initiale en tâche de fond (cancellable si barge-in)
                 session.agent_task = asyncio.create_task(
                     _send_audio(websocket, session, "__START__")
@@ -122,9 +123,7 @@ async def handle_media_stream(websocket: WebSocket) -> None:
                     session.transcript.append(f"Agent: {reply}")
                     logger.info("agent_reply", call_sid=session.call_sid, text=reply)
 
-                    session.agent_task = asyncio.create_task(
-                        _send_audio(websocket, session, reply)
-                    )
+                    session.agent_task = asyncio.create_task(_send_audio(websocket, session, reply))
 
             elif event == "stop":
                 if session:
@@ -153,16 +152,19 @@ async def handle_media_stream(websocket: WebSocket) -> None:
 # Envoi audio (tâche annulable)
 # ---------------------------------------------------------------------------
 
+
 async def _send_audio(websocket: WebSocket, session: CallSession, text: str) -> None:
     session.agent_speaking = True
     try:
         mulaw = await synthesize_speech(text)
         payload = base64.b64encode(mulaw).decode()
-        await websocket.send_json({
-            "event": "media",
-            "streamSid": session.stream_sid,
-            "media": {"payload": payload},
-        })
+        await websocket.send_json(
+            {
+                "event": "media",
+                "streamSid": session.stream_sid,
+                "media": {"payload": payload},
+            }
+        )
     except asyncio.CancelledError:
         pass  # barge-in — silencieux
     except Exception as exc:
@@ -179,6 +181,7 @@ async def _send_clear(websocket: WebSocket, stream_sid: str | None) -> None:
 # ---------------------------------------------------------------------------
 # Timeout watchdog
 # ---------------------------------------------------------------------------
+
 
 async def _timeout_watchdog(websocket: WebSocket, session: CallSession) -> None:
     while True:
@@ -201,18 +204,22 @@ async def _timeout_watchdog(websocket: WebSocket, session: CallSession) -> None:
 # Fin d'appel — résumé automatique + logging
 # ---------------------------------------------------------------------------
 
+
 async def _handle_call_end(session: CallSession) -> None:
+    turns = len(session.transcript) // 2
     logger.info(
         "call_ended",
         call_sid=session.call_sid,
         caller=session.caller,
         duration_secs=session.duration,
-        turns=len(session.transcript) // 2,
+        turns=turns,
     )
+
+    # Résumé LLM → CRM
     if session.transcript:
         summary = (
             f"Durée: {session.duration}s. "
-            f"{len(session.transcript) // 2} échange(s). "
+            f"{turns} échange(s). "
             f"Transcript: {' | '.join(session.transcript[:6])}"
         )
         try:
@@ -220,10 +227,34 @@ async def _handle_call_end(session: CallSession) -> None:
         except Exception as exc:
             logger.error("end_summary_error", call_sid=session.call_sid, error=str(exc))
 
+    # Persistance DB
+    try:
+        await save_call(
+            call_sid=session.call_sid,
+            caller=session.caller,
+            duration_secs=session.duration,
+            turns=turns,
+            transcript="\n".join(session.transcript),
+        )
+    except Exception as exc:
+        logger.error("db_save_error", call_sid=session.call_sid, error=str(exc))
+
+    # Notification Slack / Teams
+    try:
+        await notify_call_ended(
+            call_sid=session.call_sid,
+            caller=session.caller,
+            duration=session.duration,
+            transcript=session.transcript,
+        )
+    except Exception as exc:
+        logger.error("webhook_notify_error", call_sid=session.call_sid, error=str(exc))
+
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _agent_free(session: CallSession) -> bool:
     return session.agent_task is None or session.agent_task.done()

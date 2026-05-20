@@ -26,8 +26,28 @@ class Settings(BaseSettings):
     whisper_model: str = "base"
 
     # Appel
-    call_timeout_secs: int = 30   # silence max avant raccrochage automatique
-    max_retries: int = 3          # tentatives max sur STT / TTS / LLM
+    call_timeout_secs: int = 30  # silence max avant raccrochage automatique
+    max_retries: int = 3  # tentatives max sur STT / TTS / LLM
+
+    # Base de données
+    database_url: str = "sqlite:///./calls.db"
+
+    # Notifications Slack / Teams (optionnel)
+    slack_webhook_url: str = ""
+
+    # CRM HTTP (optionnel — HubSpot / Salesforce / Notion)
+    crm_api_url: str = ""
+    crm_api_key: str = ""
+
+    # Google Calendar (optionnel — JSON service account en base64 ou raw)
+    google_calendar_credentials: str = ""
+    google_calendar_id: str = "primary"
+
+    # Monitoring (optionnel)
+    sentry_dsn: str = ""
+
+    # Rate limiting (requêtes/minute par IP sur POST /calls/outbound)
+    rate_limit_calls_per_minute: int = 10
 
 
-settings = Settings()
+settings = Settings()  # type: ignore[call-arg]

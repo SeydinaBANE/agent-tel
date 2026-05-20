@@ -1,18 +1,23 @@
-from datetime import datetime
-
 from agno.tools import tool
 
+from app.services.calendar_service import create_event, list_free_slots
 
-def _check_availability(date: str) -> str:
-    slots = ["09:00", "10:30", "14:00", "15:30", "17:00"]
+
+async def _check_availability(date: str) -> str:
+    slots = await list_free_slots(date)
+    if not slots:
+        return f"Aucun créneau disponible le {date}."
     return f"Créneaux disponibles le {date} : {', '.join(slots)}"
 
 
-def _book_appointment(date: str, time: str, client_name: str, reason: str) -> str:
-    confirmation_id = f"RDV-{datetime.now().strftime('%Y%m%d%H%M%S')}"
+async def _book_appointment(date: str, time: str, client_name: str, reason: str) -> str:
+    summary = f"{reason} — {client_name}"
+    event_id = await create_event(date=date, time=time, summary=summary)
+    if event_id.startswith("Erreur"):
+        return f"Impossible de créer le rendez-vous : {event_id}"
     return (
         f"Rendez-vous confirmé pour {client_name} le {date} à {time}. "
-        f"Motif : {reason}. Référence : {confirmation_id}"
+        f"Motif : {reason}. Référence : {event_id}"
     )
 
 

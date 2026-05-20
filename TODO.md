@@ -38,25 +38,27 @@ Légende : ✅ Fait | ⬜ À faire | 🔥 Priorité haute
 
 ---
 
-## Phase 3 — Intégrations métier
+## Phase 3 — Intégrations métier ✅
 
-- [ ] Brancher le CRM réel (Salesforce / HubSpot / Notion)
-- [ ] Brancher Google Calendar via OAuth2
-- [ ] Webhook post-appel (notifier Slack/Teams avec résumé + transcript)
-- [ ] Historique des appels en base de données (PostgreSQL ou Supabase)
-- [ ] Transcription complète stockée par `call_sid`
-- [ ] Dashboard admin (liste des appels, écoute, métriques)
+- [x] Brancher le CRM réel (Salesforce / HubSpot / Notion) — adaptateur HTTP générique + mock
+- [x] Brancher Google Calendar via service account — `calendar_service.py` + mock
+- [x] Webhook post-appel (notifier Slack/Teams avec résumé + transcript)
+- [x] Historique des appels en base de données (SQLite local / PostgreSQL prod)
+- [x] Transcription complète stockée par `call_sid`
+- [x] Dashboard admin REST : `GET /admin/calls`, `GET /admin/calls/{sid}`
 
 ---
 
-## Phase 4 — Déploiement & Production
+## Phase 4 — Déploiement & Production ✅
 
+- [x] Rate limiting `POST /calls/outbound` (slowapi, 10 req/min/IP configurable)
+- [x] Validation signature Twilio (`X-Twilio-Signature`) — dépendance FastAPI, bypass dev automatique
+- [x] Monitoring erreurs Sentry (init conditionnel si `SENTRY_DSN` configuré)
+- [x] Health endpoint enrichi (`/health` avec version + statut DB)
+- [x] CI/CD GitHub Actions (`.github/workflows/ci.yml`) — lint + mypy + tests sur chaque push
 - [ ] Variables d'environnement dans un secrets manager (Doppler / AWS Secrets Manager)
-- [ ] Déploiement Railway / Render / EC2 avec CI/CD
+- [ ] Déploiement Railway / Render / EC2
 - [ ] Configurer domaine custom + certificat TLS (requis pour `wss://`)
-- [ ] Rate limiting sur les endpoints publics (slowapi)
-- [ ] Validation signature Twilio (`X-Twilio-Signature`) sur tous les webhooks
-- [ ] Monitoring erreurs (Sentry)
 - [ ] Métriques : durée d'appel, latence STT/LLM/TTS, taux d'erreur (Datadog / Grafana)
 - [ ] Alertes en cas de taux d'erreur > seuil
 

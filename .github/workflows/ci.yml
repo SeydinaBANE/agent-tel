@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: ["main", "feat/**"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install system deps (ffmpeg)
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+      - name: Install Python deps
+        run: pip install -r requirements.txt
+
+      - name: Lint (ruff)
+        run: ruff check .
+
+      - name: Format check (ruff-format)
+        run: ruff format --check .
+
+      - name: Type check (mypy)
+        run: mypy app/
+
+      - name: Run tests
+        env:
+          OPENROUTER_API_KEY: sk-or-test-key
+          TWILIO_ACCOUNT_SID: ACtest
+          TWILIO_AUTH_TOKEN: test_token
+          TWILIO_PHONE_NUMBER: "+33600000000"
+          DATABASE_URL: sqlite:///./test.db
+        run: pytest --tb=short -q
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-html
+          path: htmlcov/

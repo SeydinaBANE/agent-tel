@@ -1,48 +1,57 @@
 """Tests des endpoints FastAPI."""
+
+from unittest.mock import AsyncMock, patch
+
 import pytest
 from fastapi.testclient import TestClient
-from unittest.mock import AsyncMock, MagicMock, patch
 
 
 @pytest.fixture
 def client():
     from app.main import app
+
     return TestClient(app)
 
 
 class TestHealthEndpoint:
     def test_health_returns_ok(self, client):
-        response = client.get("/health")
+        with patch("app.main.get_recent_calls", new_callable=AsyncMock, return_value=[]):
+            response = client.get("/health")
 
         assert response.status_code == 200
-        assert response.json() == {"status": "ok"}
+        assert response.json()["status"] == "ok"
 
 
 class TestInboundTwiml:
-    def test_returns_xml(self, client):
-        response = client.post(
-            "/twiml/inbound",
-            data={"From": "+33600000001", "CallSid": "CA123"},
-        )
+    """La validation de signature est bypassée en test (TWILIO_AUTH_TOKEN = 'test_token',
+    mais RequestValidator.validate retourne True quand le token est un placeholder court)."""
 
+    def _post_inbound(self, client):
+        # Bypass la dépendance Twilio signature pour les tests
+        from app.main import app
+        from app.middleware.twilio_auth import verify_twilio_signature
+
+        app.dependency_overrides[verify_twilio_signature] = lambda: None
+        try:
+            return client.post(
+                "/twiml/inbound",
+                data={"From": "+33600000001", "CallSid": "CA123"},
+            )
+        finally:
+            app.dependency_overrides.clear()
+
+    def test_returns_xml(self, client):
+        response = self._post_inbound(client)
         assert response.status_code == 200
         assert "application/xml" in response.headers["content-type"]
 
     def test_twiml_contains_stream(self, client):
-        response = client.post(
-            "/twiml/inbound",
-            data={"From": "+33600000001", "CallSid": "CA123"},
-        )
-
+        response = self._post_inbound(client)
         assert "<Stream" in response.text
         assert "/ws/stream" in response.text
 
     def test_twiml_passes_caller_param(self, client):
-        response = client.post(
-            "/twiml/inbound",
-            data={"From": "+33600000001", "CallSid": "CA123"},
-        )
-
+        response = self._post_inbound(client)
         assert "+33600000001" in response.text
 
 
