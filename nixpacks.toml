@@ -1,0 +1,5 @@
+# Configuration nixpacks pour Railway
+# Installe ffmpeg sur le système (requis pour la conversion TTS mulaw)
+
+[phases.setup]
+nixPkgs = ["ffmpeg"]
