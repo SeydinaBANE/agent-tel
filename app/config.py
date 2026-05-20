@@ -25,5 +25,9 @@ class Settings(BaseSettings):
     agent_language: str = "fr"
     whisper_model: str = "base"
 
+    # Appel
+    call_timeout_secs: int = 30   # silence max avant raccrochage automatique
+    max_retries: int = 3          # tentatives max sur STT / TTS / LLM
+
 
 settings = Settings()

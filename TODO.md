@@ -24,15 +24,17 @@ Légende : ✅ Fait | ⬜ À faire | 🔥 Priorité haute
 
 ---
 
-## Phase 2 — Robustesse 🔥
+## Phase 2 — Robustesse ✅
 
-- [ ] Gestion des timeouts appel (raccrocher proprement si silence > 30s)
-- [ ] Retry automatique sur erreur STT / TTS / LLM
-- [ ] Logging structuré JSON avec `call_sid`, durée d'appel, transcript complet
-- [ ] Gestion des interruptions (barge-in — couper le TTS si l'utilisateur reprend la parole)
-- [ ] Validation format E.164 sur l'endpoint `/calls/outbound`
-- [ ] Tests d'intégration — simulation complète flux WebSocket entrant
-- [ ] Gestion propre du signal `stop` Twilio (log call summary auto)
+- [x] Gestion des timeouts appel (watchdog asyncio, raccrochage auto après `CALL_TIMEOUT_SECS`)
+- [x] Retry automatique x3 sur erreur STT / TTS (backoff exponentiel 0.4s × attempt)
+- [x] Logging structuré JSON (`app/logger.py`) — `call_sid`, durée, transcript, tous les événements
+- [x] Barge-in — cancel du task TTS + `clear` Twilio quand l'utilisateur reprend la parole
+- [x] Validation E.164 sur `POST /calls/outbound` (regex `^\+[1-9]\d{1,14}$`)
+- [x] Tests d'intégration WebSocket — flux start → stop complet simulé
+- [x] Signal `stop` Twilio → `_handle_call_end()` → résumé auto envoyé au CRM via agent
+- [x] Tokens spéciaux `__START__`, `__TIMEOUT__`, `__END__` résolus dans `process_turn()`
+- [x] TTS subprocess `ffmpeg` wrappé dans `asyncio.to_thread` (non-bloquant)
 
 ---
 
