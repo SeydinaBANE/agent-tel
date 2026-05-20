@@ -49,5 +49,14 @@ class Settings(BaseSettings):
     # Rate limiting (requêtes/minute par IP sur POST /calls/outbound)
     rate_limit_calls_per_minute: int = 10
 
+    # Escalade vers humain (optionnel — numéro E.164 du conseiller)
+    escalation_phone: str = ""
+
+    # STT : langue Whisper — vide = détection automatique, "fr" = forcer le français
+    whisper_language: str = "fr"
+
+    # Résumé SMS post-appel (true = envoie un SMS récapitulatif à l'appelant)
+    send_summary_sms: bool = False
+
 
 settings = Settings()  # type: ignore[call-arg]
