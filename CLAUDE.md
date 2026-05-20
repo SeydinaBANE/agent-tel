@@ -10,12 +10,12 @@ Agent téléphonique IA entrant + sortant. Le LLM est routé via **OpenRouter** 
 |---|---|---|
 | Framework agentique | Agno | 2.6.8 |
 | LLM | OpenRouter → GPT-4o (ou autre) | via `OpenAILike` |
-| Serveur | FastAPI + Uvicorn | 0.115+ |
+| Serveur | FastAPI + Uvicorn | 0.116+ (Starlette 1.0+) |
 | Téléphonie | Twilio Media Streams (WebSocket) | 9.x |
 | STT | Whisper local (`openai-whisper`) | 20250625 |
 | TTS | edge-tts + ffmpeg (mulaw) | 7.x |
 | Config | pydantic-settings v2 + `.env` | 2.x |
-| Tests | pytest + pytest-asyncio + pytest-mock | 31 tests |
+| Tests | pytest + pytest-asyncio + pytest-mock | 114 tests |
 | Qualité | ruff + mypy + pre-commit | — |
 
 ## Commandes essentielles
