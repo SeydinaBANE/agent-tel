@@ -1,8 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from app.db.models import CallRecord
 from app.db.repository import get_call_by_sid, get_call_stats, get_calls_by_caller, get_recent_calls
 from app.middleware.admin_auth import verify_admin_key
+from app.middleware.rate_limit import limiter
 
 router = APIRouter(prefix="/admin", tags=["admin"], dependencies=[Depends(verify_admin_key)])
 
@@ -22,7 +23,9 @@ def _serialize(record: CallRecord) -> dict:
 
 
 @router.get("/calls")
+@limiter.limit("30/minute")
 async def list_calls(
+    request: Request,
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
     caller: str | None = Query(default=None),
@@ -43,6 +46,7 @@ async def get_call(call_sid: str):
 
 
 @router.get("/metrics")
-async def metrics():
+@limiter.limit("30/minute")
+async def metrics(request: Request):
     """Statistiques agrégées : total appels, durée moyenne, tours moyens."""
     return await get_call_stats()

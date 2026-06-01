@@ -15,8 +15,17 @@ _MOCK: dict[str, dict] = {
 }
 
 
+def _require_crm() -> None:
+    if not settings.allow_service_mocks and not settings.crm_api_url:
+        raise RuntimeError(
+            "CRM_API_URL non configuré et ALLOW_SERVICE_MOCKS=false. "
+            "Configurez le CRM ou passez ALLOW_SERVICE_MOCKS=true."
+        )
+
+
 async def get_contact(phone_number: str) -> dict | None:
     if not settings.crm_api_url:
+        _require_crm()
         return _MOCK.get(phone_number)
 
     try:
@@ -32,11 +41,14 @@ async def get_contact(phone_number: str) -> dict | None:
             return results[0] if results else None
     except Exception as exc:
         logger.error("crm_get_contact_error", phone=phone_number, error=str(exc))
+        if not settings.allow_service_mocks:
+            raise
         return None
 
 
 async def log_activity(phone_number: str, summary: str) -> str:
     if not settings.crm_api_url:
+        _require_crm()
         return f"[mock] Résumé enregistré pour {phone_number}"
 
     try:
@@ -50,4 +62,6 @@ async def log_activity(phone_number: str, summary: str) -> str:
             return f"Activité enregistrée (id: {resp.json().get('id', '?')})"
     except Exception as exc:
         logger.error("crm_log_activity_error", phone=phone_number, error=str(exc))
+        if not settings.allow_service_mocks:
+            raise
         return f"Erreur CRM : {exc}"

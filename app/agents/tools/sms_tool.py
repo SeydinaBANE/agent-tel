@@ -15,6 +15,6 @@ def _send_sms(to: str, message: str) -> str:
     return f"SMS envoyé à {to} (SID: {msg.sid})"
 
 
-send_sms = tool(
-    description="Envoie un SMS de confirmation ou de suivi à un numéro de téléphone."
-)(_send_sms)
+send_sms = tool(description="Envoie un SMS de confirmation ou de suivi à un numéro de téléphone.")(
+    _send_sms
+)

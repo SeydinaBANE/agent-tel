@@ -1,7 +1,7 @@
 """Tests de la chaîne de conversion audio (mulaw ↔ PCM ↔ WAV)."""
+
 import io
 import wave
-import pytest
 
 
 class TestMulawToWav:
