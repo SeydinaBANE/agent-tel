@@ -33,7 +33,7 @@ websockets>=12.0
 slowapi>=0.1.9
 
 # Monitoring (optionnel)
-sentry-sdk[fastapi]>=2.0.0
+sentry-sdk[fastapi]>=2.61.1
 
 # DB async
 sqlalchemy[asyncio]>=2.0.0
