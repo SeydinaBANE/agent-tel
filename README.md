@@ -1,6 +1,7 @@
 # Agent Téléphonique IA
 
 ![CI](https://github.com/SeydinaBANE/agent-tel/actions/workflows/ci.yml/badge.svg)
+![CD](https://github.com/SeydinaBANE/agent-tel/actions/workflows/docker.yml/badge.svg)
 ![Docker](https://img.shields.io/badge/docker-ghcr.io/seydinabane/agent--tel-blue?logo=docker)
 ![Python](https://img.shields.io/badge/python-3.11+-blue)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.116+-green)
