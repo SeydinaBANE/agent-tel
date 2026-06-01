@@ -1,8 +1,7 @@
 """Tests de la logique CallSession (buffer audio + détection silence)."""
+
 import base64
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 from app.telephony.stream import CHUNK_DURATION, SILENCE_THRESHOLD, CallSession
 

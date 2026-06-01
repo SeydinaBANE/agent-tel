@@ -1,4 +1,5 @@
 import os
+
 import pytest
 
 # Variables d'env factices pour éviter les erreurs de validation pydantic-settings

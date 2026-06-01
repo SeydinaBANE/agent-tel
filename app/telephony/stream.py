@@ -15,6 +15,7 @@ from app.services.escalation import ESCALATION_SENTINEL, transfer_call
 from app.services.stt import transcribe_audio
 from app.services.tts import synthesize_speech, synthesize_streaming
 from app.services.webhook import notify_call_ended
+from app.telephony.ws_auth import verify_ws_token
 
 logger = get_logger(__name__)
 
@@ -89,6 +90,17 @@ class CallSession:
 # ---------------------------------------------------------------------------
 
 
+# Active WebSocket sessions (pour arrêt gracieux)
+_active_sessions: set[CallSession] = set()
+
+
+async def cancel_all_sessions() -> None:
+    """Annule toutes les sessions actives (appelé lors de l'arrêt gracieux)."""
+    for session in list(_active_sessions):
+        _cancel_agent(session)
+    _active_sessions.clear()
+
+
 async def handle_media_stream(websocket: WebSocket) -> None:
     await websocket.accept()
     session: CallSession | None = None
@@ -103,8 +115,17 @@ async def handle_media_stream(websocket: WebSocket) -> None:
                 start = message["start"]
                 call_sid = start["callSid"]
                 caller = start.get("customParameters", {}).get("caller", "inconnu")
+
+                # Validation du token d'authentification WebSocket
+                token = websocket.query_params.get("token", "")
+                if not verify_ws_token(token, caller):
+                    logger.warning("ws_auth_failed", call_sid=call_sid, caller=caller)
+                    await websocket.close(code=4001)
+                    return
+
                 session = CallSession(call_sid=call_sid, caller=caller)
                 session.stream_sid = start["streamSid"]
+                _active_sessions.add(session)
 
                 # Charge l'historique du client avant le premier tour
                 await session.load_memory()
@@ -196,6 +217,7 @@ async def handle_media_stream(websocket: WebSocket) -> None:
             timeout_task.cancel()
         if session:
             _cancel_agent(session)
+            _active_sessions.discard(session)
 
 
 # ---------------------------------------------------------------------------

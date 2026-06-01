@@ -1,9 +1,13 @@
 import asyncio
-import audioop
 import io
 import os
 import tempfile
 import wave
+
+try:
+    import audioop
+except ImportError:
+    import audioop_lts as audioop  # type: ignore[no-redef]  # Python 3.13+
 
 import whisper
 

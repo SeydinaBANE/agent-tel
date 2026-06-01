@@ -15,15 +15,26 @@ logger = get_logger(__name__)
 _MOCK_SLOTS = ["09:00", "10:30", "14:00", "15:30", "17:00"]
 
 
+def _require_calendar() -> None:
+    if not settings.allow_service_mocks and not settings.google_calendar_credentials:
+        raise RuntimeError(
+            "GOOGLE_CALENDAR_CREDENTIALS non configuré et ALLOW_SERVICE_MOCKS=false. "
+            "Configurez Google Calendar ou passez ALLOW_SERVICE_MOCKS=true."
+        )
+
+
 async def list_free_slots(date: str) -> list[str]:
     """Retourne les créneaux libres pour une date YYYY-MM-DD."""
     if not settings.google_calendar_credentials:
+        _require_calendar()
         return _MOCK_SLOTS
 
     try:
         return await asyncio.to_thread(_fetch_free_slots_sync, date)
     except Exception as exc:
         logger.error("calendar_free_slots_error", date=date, error=str(exc))
+        if not settings.allow_service_mocks:
+            raise
         return _MOCK_SLOTS
 
 
@@ -32,6 +43,7 @@ async def create_event(
 ) -> str:
     """Crée un événement Google Calendar. Retourne l'ID ou un message d'erreur."""
     if not settings.google_calendar_credentials:
+        _require_calendar()
         from datetime import datetime as dt
 
         fake_id = f"mock_{dt.now().strftime('%Y%m%d%H%M%S')}"
@@ -41,6 +53,8 @@ async def create_event(
         return await asyncio.to_thread(_create_event_sync, date, time, summary, attendee_email)
     except Exception as exc:
         logger.error("calendar_create_event_error", error=str(exc))
+        if not settings.allow_service_mocks:
+            raise
         return f"Erreur Google Calendar : {exc}"
 
 

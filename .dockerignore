@@ -1,0 +1,46 @@
+# Git
+.git/
+.gitignore
+
+# Python venv
+.venv/
+venv/
+
+# Bytecode
+__pycache__/
+*.pyc
+*.pyo
+
+# Env secrets
+.env
+.env.example
+
+# Tests
+tests/
+
+# Documentation
+docs/
+
+# Caches
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Dev configs
+Makefile
+pyproject.toml
+.pre-commit-config.yaml
+docker-compose.yml
+Procfile
+railway.toml
+nixpacks.toml
+
+# Dev docs
+*.md
+!README.md
+!LICENSE
+
+# OS
+.DS_Store

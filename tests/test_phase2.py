@@ -1,20 +1,20 @@
 """Tests Phase 2 — Robustesse : E.164, timeout, barge-in, stop handler, retry, logs."""
-import asyncio
-import base64
+
 import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
 
-
 # ---------------------------------------------------------------------------
 # Validation E.164
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def client():
     from app.main import app
+
     return TestClient(app)
 
 
@@ -47,9 +47,11 @@ class TestE164Validation:
 # CallSession — timeout et barge-in
 # ---------------------------------------------------------------------------
 
+
 def _make_session(call_sid="CA_TEST", caller="+33600000001"):
     with patch("app.telephony.stream.create_tel_agent", return_value=MagicMock()):
         from app.telephony.stream import CallSession
+
         return CallSession(call_sid=call_sid, caller=caller)
 
 
@@ -70,12 +72,14 @@ class TestCallSessionPhase2:
 
     def test_agent_free_when_task_is_none(self):
         from app.telephony.stream import _agent_free
+
         session = _make_session()
         session.agent_task = None
         assert _agent_free(session) is True
 
     def test_agent_free_when_task_done(self):
         from app.telephony.stream import _agent_free
+
         session = _make_session()
         done_task = MagicMock()
         done_task.done.return_value = True
@@ -84,6 +88,7 @@ class TestCallSessionPhase2:
 
     def test_agent_not_free_when_task_running(self):
         from app.telephony.stream import _agent_free
+
         session = _make_session()
         running_task = MagicMock()
         running_task.done.return_value = False
@@ -92,6 +97,7 @@ class TestCallSessionPhase2:
 
     def test_cancel_agent_cancels_task(self):
         from app.telephony.stream import _cancel_agent
+
         session = _make_session()
         mock_task = MagicMock()
         mock_task.done.return_value = False
@@ -115,11 +121,16 @@ class TestCallSessionPhase2:
 # Stop handler — résumé automatique
 # ---------------------------------------------------------------------------
 
+
 class TestHandleCallEnd:
     async def test_logs_call_ended_event(self, mocker):
         from app.telephony.stream import _handle_call_end
+
         session = _make_session()
-        session.transcript = ["Utilisateur: Bonjour", "Agent: Bonjour, comment puis-je vous aider ?"]
+        session.transcript = [
+            "Utilisateur: Bonjour",
+            "Agent: Bonjour, comment puis-je vous aider ?",
+        ]
 
         mock_process = mocker.patch(
             "app.telephony.stream.process_turn",
@@ -134,6 +145,7 @@ class TestHandleCallEnd:
 
     async def test_no_summary_call_when_empty_transcript(self, mocker):
         from app.telephony.stream import _handle_call_end
+
         session = _make_session()
         session.transcript = []
 
@@ -150,20 +162,21 @@ class TestHandleCallEnd:
 # Retry STT
 # ---------------------------------------------------------------------------
 
+
 class TestSTTRetry:
     async def test_returns_on_first_success(self, mocker, fake_mulaw_audio):
         mocker.patch(
             "app.services.stt._get_model",
-            return_value=MagicMock(
-                transcribe=MagicMock(return_value={"text": "bonjour"})
-            ),
+            return_value=MagicMock(transcribe=MagicMock(return_value={"text": "bonjour"})),
         )
         from app.services.stt import transcribe_audio
+
         result = await transcribe_audio(fake_mulaw_audio)
         assert result == "bonjour"
 
     async def test_retries_on_transient_error(self, mocker, fake_mulaw_audio):
         call_count = 0
+
         def transcribe_side_effect(*args, **kwargs):
             nonlocal call_count
             call_count += 1
@@ -178,7 +191,9 @@ class TestSTTRetry:
         mocker.patch("app.services.stt.asyncio.sleep", new_callable=AsyncMock)
 
         from importlib import reload
+
         import app.services.stt as stt_mod
+
         reload(stt_mod)  # reset cached model
 
         mocker.patch(
@@ -186,6 +201,7 @@ class TestSTTRetry:
             return_value=MagicMock(transcribe=MagicMock(side_effect=transcribe_side_effect)),
         )
         from app.services.stt import transcribe_audio
+
         result = await transcribe_audio(fake_mulaw_audio)
         assert result == "réessai"
 
@@ -194,13 +210,15 @@ class TestSTTRetry:
 # Tokens spéciaux agent
 # ---------------------------------------------------------------------------
 
+
 class TestSpecialTokens:
     async def test_start_token_resolved(self, mocker):
         mock_agent = MagicMock()
         mock_run = AsyncMock(return_value=MagicMock(content="Bonjour !"))
         mock_agent.arun = mock_run
 
-        from app.agents.tel_agent import process_turn, _SPECIAL_TOKENS
+        from app.agents.tel_agent import _SPECIAL_TOKENS, process_turn
+
         await process_turn(mock_agent, "__START__")
 
         called_with = mock_run.call_args[0][0]
@@ -211,7 +229,8 @@ class TestSpecialTokens:
         mock_run = AsyncMock(return_value=MagicMock(content="Au revoir."))
         mock_agent.arun = mock_run
 
-        from app.agents.tel_agent import process_turn, _SPECIAL_TOKENS
+        from app.agents.tel_agent import _SPECIAL_TOKENS, process_turn
+
         await process_turn(mock_agent, "__TIMEOUT__")
 
         called_with = mock_run.call_args[0][0]
@@ -223,6 +242,7 @@ class TestSpecialTokens:
         mock_agent.arun = mock_run
 
         from app.agents.tel_agent import process_turn
+
         await process_turn(mock_agent, "Quel est votre horaire ?")
 
         called_with = mock_run.call_args[0][0]
@@ -232,6 +252,7 @@ class TestSpecialTokens:
 # ---------------------------------------------------------------------------
 # Intégration WebSocket — flux start → stop
 # ---------------------------------------------------------------------------
+
 
 class TestWebSocketIntegration:
     def test_websocket_start_stop_flow(self, mocker):
@@ -252,15 +273,18 @@ class TestWebSocketIntegration:
         )
 
         from app.main import app
+
         client = TestClient(app)
 
         with client.websocket_connect("/ws/stream") as ws:
-            ws.send_json({
-                "event": "start",
-                "start": {
-                    "callSid": "CA_WS_TEST",
-                    "streamSid": "MZ_WS_TEST",
-                    "customParameters": {"caller": "+33600000001"},
-                },
-            })
+            ws.send_json(
+                {
+                    "event": "start",
+                    "start": {
+                        "callSid": "CA_WS_TEST",
+                        "streamSid": "MZ_WS_TEST",
+                        "customParameters": {"caller": "+33600000001"},
+                    },
+                }
+            )
             ws.send_json({"event": "stop"})

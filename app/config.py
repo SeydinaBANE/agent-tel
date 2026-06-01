@@ -75,6 +75,9 @@ class Settings(BaseSettings):
     # Sécurité admin — clé API pour /admin/* (vide = bypass en dev)
     admin_api_key: str = ""
 
+    # Sécurité WebSocket — HMAC token requis sur /ws/stream (vide = bypass en dev)
+    ws_auth_secret: str = ""
+
     # Mocks services tiers (false = erreur au démarrage si CRM/Calendar non configurés)
     allow_service_mocks: bool = True
 
