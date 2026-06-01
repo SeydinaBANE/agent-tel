@@ -1,0 +1,18 @@
+Alembic migrations pour Agent Téléphonique IA
+
+Environnement : `async` (SQLAlchemy async + aiosqlite ou asyncpg)
+Target : `CallRecord` (table `call_records` dans `app/db/models.py`)
+
+Exécution automatique via `entrypoint.sh` au démarrage du conteneur.
+Migration initiale : `ec21ea6bd62f_initial.py` (crée `call_records`).
+
+```bash
+# Générer une nouvelle migration
+alembic revision --autogenerate -m "description"
+
+# Monter manuellement
+alembic upgrade head
+
+# Descendre d'une version
+alembic downgrade -1
+```
