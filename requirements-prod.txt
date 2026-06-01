@@ -47,4 +47,4 @@ google-auth-oauthlib>=1.2.0
 google-api-python-client>=2.130.0
 
 # openai SDK (requis par Agno OpenAILike)
-openai>=1.30.0
+openai>=2.38.0
